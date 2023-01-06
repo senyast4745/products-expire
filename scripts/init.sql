@@ -6,7 +6,9 @@ CREATE TABLE products
     chat_id         BIGINT,
     name            VARCHAR(256),
     type            product_type,
-    expiration_date DATE
+    expiration_date DATE,
+    is_expired      BOOLEAN DEFAULT FALSE
 );
 
-ALTER TABLE products ADD PRIMARY KEY (id);
+ALTER TABLE products
+    ADD PRIMARY KEY (id);
