@@ -41,7 +41,21 @@ func (s *PgRepositoryTestSuite) TestFindAllOrderByExp() {
 	})
 	require.NoError(s.T(), err)
 
-	products, err := s.repo.FindAllOrderByExp(context.Background())
+	products, err := s.repo.FindAllOrderByExp(context.Background(), false)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), 1, len(products))
+}
+
+func (s *PgRepositoryTestSuite) TestFindByExpTime() {
+	err := s.repo.Save(context.Background(), &Product{
+		ChatId:         0,
+		Name:           "testProduct",
+		ProductType:    "FOOD",
+		ExpirationDate: time.Now().Add(time.Hour),
+	})
+	require.NoError(s.T(), err)
+
+	products, err := s.repo.FindByExpiredTime(context.Background(), time.Hour*24, "FOOD")
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), 1, len(products))
 }

@@ -7,13 +7,18 @@ import (
 )
 
 type ProductRepository interface {
+	// Save new product
 	Save(ctx context.Context, p *Product) error
-	FindAllOrderByExp(ctx context.Context) ([]Product, error)
+	// FindAllOrderByExp Return all not expired products order by expiration date
+	FindAllOrderByExp(ctx context.Context, isExpired bool) ([]Product, error)
+	// Update existing products by id
 	Update(ctx context.Context, id int64, p *Product) error
-	FindByExpiredTime(ctx context.Context, time time.Time) ([]Product, error)
-	Delete(ctx context.Context, id int64) error
+	// FindByExpiredTime return products that expired in given duration
+	FindByExpiredTime(ctx context.Context, interval time.Duration, productType string) ([]Product, error)
+	// Delete product by id
+	Delete(ctx context.Context, idForDel int64) error
+	// SetExpired set all expired products
 	SetExpired(ctx context.Context) error
-	FindAllExpired(ctx context.Context) ([]Product, error)
 }
 
 type Product struct {
@@ -24,8 +29,20 @@ type Product struct {
 	ExpirationDate time.Time
 }
 
+type RepositoryConfig struct {
+	Url string
+}
+
 type PgProductRepository struct {
 	cn *pgx.Conn
+}
+
+func NewPgProductRepository(cfg *RepositoryConfig) (ProductRepository, error) {
+	conn, err := pgx.Connect(context.Background(), cfg.Url)
+	if err != nil {
+		return nil, err
+	}
+	return &PgProductRepository{conn}, nil
 }
 
 func (pg *PgProductRepository) Save(ctx context.Context, p *Product) error {
@@ -34,25 +51,13 @@ func (pg *PgProductRepository) Save(ctx context.Context, p *Product) error {
 	return err
 }
 
-func (pg *PgProductRepository) FindAllOrderByExp(ctx context.Context) ([]Product, error) {
+func (pg *PgProductRepository) FindAllOrderByExp(ctx context.Context, isExpired bool) ([]Product, error) {
 	rows, err := pg.cn.Query(ctx,
-		"SELECT id, chat_id, name, type, expiration_date FROM products\n WHERE is_expired = FALSE ORDER BY expiration_date DESC")
+		"SELECT id, chat_id, name, type, expiration_date FROM products\n WHERE is_expired = $1 ORDER BY expiration_date DESC", isExpired)
 	if err != nil {
 		return nil, err
 	}
-	if rows.Err() != nil {
-		return nil, err
-	}
-	products := make([]Product, 0)
-	for rows.Next() {
-		p := Product{}
-		err = rows.Scan(&p.Id, &p.ChatId, &p.Name, &p.ProductType, &p.ExpirationDate)
-		if err != nil {
-			return nil, err
-		}
-		products = append(products, p)
-	}
-	return products, nil
+	return mapRowsToProducts(rows)
 }
 
 func (pg *PgProductRepository) Update(ctx context.Context, id int64, p *Product) error {
@@ -61,22 +66,36 @@ func (pg *PgProductRepository) Update(ctx context.Context, id int64, p *Product)
 	return err
 }
 
-func (pg *PgProductRepository) FindByExpiredTime(ctx context.Context, time time.Time) ([]Product, error) {
-	//TODO implement me
-	panic("implement me")
+func (pg *PgProductRepository) FindByExpiredTime(ctx context.Context, interval time.Duration, productType string) ([]Product, error) {
+	r, err := pg.cn.Query(ctx, "SELECT id, chat_id, name, type, expiration_date FROM products WHERE type = $1 AND expiration_date <= now() + $2", productType, interval)
+	if err != nil {
+		return nil, err
+	}
+	return mapRowsToProducts(r)
 }
 
-func (pg *PgProductRepository) Delete(ctx context.Context, id int64) error {
-	//TODO implement me
-	panic("implement me")
+func (pg *PgProductRepository) Delete(ctx context.Context, idForDel int64) error {
+	_, err := pg.cn.Exec(ctx, "DELETE from products WHERE id = $1", idForDel)
+	return err
 }
 
 func (pg *PgProductRepository) SetExpired(ctx context.Context) error {
-	//TODO implement me
-	panic("implement me")
+	_, err := pg.cn.Exec(ctx, "UPDATE products SET is_expired = TRUE WHERE now() > expiration_date ")
+	return err
 }
 
-func (pg *PgProductRepository) FindAllExpired(ctx context.Context) ([]Product, error) {
-	//TODO implement me
-	panic("implement me")
+func mapRowsToProducts(r pgx.Rows) ([]Product, error) {
+	if err := r.Err(); err != nil {
+		return nil, err
+	}
+	products := make([]Product, 0)
+	for r.Next() {
+		p := Product{}
+		err := r.Scan(&p.Id, &p.ChatId, &p.Name, &p.ProductType, &p.ExpirationDate)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, p)
+	}
+	return products, nil
 }
